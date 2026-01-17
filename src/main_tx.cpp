@@ -26,26 +26,16 @@ static uint32_t last_tx_time = 0;
 static bool ota_enabled = false;
 static uint32_t tx_pkt_counter = 0;
 static uint32_t ack_pkt_counter = 0;
-static int16_t last_rssi = 0;
 
-static uint32_t last_ack_received_time = 0;
-static uint32_t last_pkt_sent_time = 0;
 static double last_distance_m = 0;
-
-// History buffers for plotting (adjust size to balance memory and history depth)
-#define STATS_HISTORY_LEN 120 // Save last 120 samples (~4 minutes at 2s updates)
-static int16_t rssi_history[STATS_HISTORY_LEN] = {0};
-static double distance_history[STATS_HISTORY_LEN] = {0};
-static int stats_head = 0;
-static bool stats_buffer_full = false;
 
 wl_status_t last_wifi_status = WL_DISCONNECTED;
 
 ubx_nav_pvt_t nav_pvt;
 
 AsyncWebServer server(80);
-const char* SSID = "hola";
-const char* PASS = "hola1234";
+const char* SSID = "red";
+const char* PASS = "12345678";
 const char* ap_ssid = "Radio-TX";
 const char* ap_password = "12345678";
 
@@ -128,16 +118,6 @@ void handle_wifi() {
         Serial.println("Wifi disconnected!!!");
     }
     last_wifi_status = wifi_status;
-}
-
-void update_history_buffers(int16_t rssi, double distance) {
-    rssi_history[stats_head] = rssi;
-    distance_history[stats_head] = distance;
-    stats_head++;
-    if (stats_head >= STATS_HISTORY_LEN) {
-        stats_head = 0;
-        stats_buffer_full = true;
-    }
 }
 
 void update_oled_display() {
