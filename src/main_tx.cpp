@@ -28,6 +28,7 @@ static uint32_t tx_pkt_counter = 0;
 static uint32_t ack_pkt_counter = 0;
 
 static double last_distance_m = 0;
+static float battery_voltage = 0.0f;
 
 wl_status_t last_wifi_status = WL_DISCONNECTED;
 
@@ -80,6 +81,29 @@ double haversine(float lat1, float lon1, float lat2, float lon2) {
     return R_EARTH * c;
 }
 
+float read_battery_voltage() {
+    // Battery voltage divider: LilyGo T3 has a 1/2 divider
+    int adc_value = analogRead(BATTERY_ADC_PIN);
+    // Convert ADC reading to voltage (accounting for divider)
+    float voltage = (adc_value / 4095.0) * 3.3 * 2;
+    return voltage;
+}
+
+uint8_t calculate_battery_percentage(float voltage) {
+    // LiPo battery voltage: 3.0V (empty) to 4.2V (full)
+    // Linear approximation
+    const float MIN_VOLTAGE = 3.0f;
+    const float MAX_VOLTAGE = 4.2f;
+
+    if (voltage <= MIN_VOLTAGE) {
+        return 0;
+    } else if (voltage >= MAX_VOLTAGE) {
+        return 100;
+    } else {
+        return (uint8_t)(((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100);
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(100);
@@ -104,6 +128,8 @@ void setup() {
 
     setupWiFi();
     pinMode(LED_PIN, OUTPUT);
+    pinMode(BATTERY_ADC_PIN, INPUT);
+    analogReadResolution(12);
 
     ublox_init();
     last_tx_time = millis();
@@ -125,22 +151,27 @@ void update_oled_display() {
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
 
-    // Title
+    // Battery Status
     display.setCursor(0, 0);
+    display.print("Batt: ");
+    display.print(battery_voltage, 2);
+    display.print("V (");
+    display.print(calculate_battery_percentage(battery_voltage));
+    display.println("%)");
 
     // WiFi Status
-    display.setCursor(0, 0);
+    display.setCursor(0, 10);
     display.print("WiFi: ");
     if (WiFi.status() == WL_CONNECTED) {
         display.println("Connected");
-        display.setCursor(0, 10);
+        display.setCursor(0, 20);
         display.println(WiFi.localIP());
     } else {
         display.println("Disconnected");
-        display.setCursor(0, 10);
-        display.println("SSID: " + String(SSID));
         display.setCursor(0, 20);
-        display.println("Pass: " + String(PASS));
+        display.print(SSID);
+        display.print(" : ");
+        display.println(PASS);
     }
 
     // GPS Status
@@ -169,6 +200,7 @@ void loop() {
     }
     if (millis() - last_tx_time > 1000) {
         static int led_state = LOW;
+        battery_voltage = read_battery_voltage();
         digitalWrite(LED_PIN, led_state);
         led_state = !led_state;
         last_tx_time = millis();
