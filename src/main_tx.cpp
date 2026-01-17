@@ -5,17 +5,20 @@
 #include <LittleFS.h>
 #include <SPI.h>
 #include "ArduinoOTA.h"
-#include <U8g2lib.h>
 #include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
 #include "OTA.h"
 #include "packet.h"
 #include "pins.h"
 #include "ublox_protocol.h"
 
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, OLED_RST, OLED_SCL, OLED_SDA);
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
 
-#define DNS_NAME "gps"
+#define DNS_NAME "gps-tracker"
 
 const float RECEIVER_LAT = 40.7749f;
 const float RECEIVER_LON = -3.4194f;
@@ -89,23 +92,26 @@ double haversine(float lat1, float lon1, float lat2, float lon2) {
 
 void setup() {
     Serial.begin(115200);
+    delay(100);
     Serial.println("Starting...");
 
-    // Initialize I2C for OLED
+    // Initialize I2C and OLED
     Wire.begin(OLED_SDA, OLED_SCL);
+    Wire.setClock(100000);
+    delay(100);
 
-    // Initialize OLED display
-    if (!u8g2.begin()) {
-        Serial.println("OLED init failed!");
-    } else {
+    if(display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
         Serial.println("OLED initialized");
-        u8g2.clearBuffer();
-        u8g2.setFont(u8g2_font_6x10_tr);
-        u8g2.drawStr(0, 10, "Initializing...");
-        u8g2.sendBuffer();
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(0, 0);
+        display.println("GPS Tracker TX");
+        display.display();
+    } else {
+        Serial.println("OLED init failed");
     }
 
-    // setupFS();
     setupWiFi();
     pinMode(LED_PIN, OUTPUT);
 
@@ -135,41 +141,41 @@ void update_history_buffers(int16_t rssi, double distance) {
 }
 
 void update_oled_display() {
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_6x10_tr);
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
 
     // Title
-    u8g2.drawStr(0, 10, "GPS Tracker TX");
-    u8g2.drawLine(0, 12, 128, 12);
+    display.setCursor(0, 0);
 
     // WiFi Status
-    u8g2.drawStr(0, 25, "WiFi:");
+    display.setCursor(0, 0);
+    display.print("WiFi: ");
     if (WiFi.status() == WL_CONNECTED) {
-        u8g2.drawStr(40, 25, "Connected");
-        char ip_str[20];
-        snprintf(ip_str, sizeof(ip_str), "%s", WiFi.localIP().toString().c_str());
-        u8g2.setFont(u8g2_font_5x7_tr);
-        u8g2.drawStr(0, 35, ip_str);
-        u8g2.setFont(u8g2_font_6x10_tr);
+        display.println("Connected");
+        display.setCursor(0, 10);
+        display.println(WiFi.localIP());
     } else {
-        u8g2.drawStr(40, 25, "Disconnected");
+        display.println("Disconnected");
+        display.setCursor(0, 10);
+        display.println("SSID: " + String(SSID));
+        display.setCursor(0, 20);
+        display.println("Pass: " + String(PASS));
     }
 
     // GPS Status
-    u8g2.drawStr(0, 48, "GPS:");
+    display.setCursor(0, 40);
+    display.print("GPS: ");
     if (nav_pvt.flags.gnssFixOK) {
-        u8g2.drawStr(40, 48, "Fix OK");
-        char gps_info[30];
-        snprintf(gps_info, sizeof(gps_info), "Sats: %d", nav_pvt.numSV);
-        u8g2.drawStr(0, 58, gps_info);
+        display.println("Fix OK");
     } else {
-        u8g2.drawStr(40, 48, "No Fix");
-        char gps_info[30];
-        snprintf(gps_info, sizeof(gps_info), "Sats: %d", nav_pvt.numSV);
-        u8g2.drawStr(0, 58, gps_info);
+        display.println("No Fix");
     }
+    display.setCursor(0, 50);
+    display.print("Sats: ");
+    display.println(nav_pvt.numSV);
 
-    u8g2.sendBuffer();
+    display.display();
 }
 
 void loop() {
@@ -195,10 +201,11 @@ void loop() {
         .fix_type = nav_pvt.fixType,
         .sv_num = (uint8_t)(nav_pvt.numSV > 15 ? 15 : nav_pvt.numSV), // limit to 15 for 4 bits
     };
-    if (digitalRead(BUTTON_PIN) == LOW) {
-        Serial.println("Button pressed, starting OTA updater");
-        start_ota_updater();
-    }
+    // if (digitalRead(BUTTON_PIN) == LOW) {
+    //     Serial.println("Button pressed, starting OTA updater");
+    //     start_ota_updater();
+    // }
+    return;
     ublox_get_new_data();
     if (ublox_parse_msg(&nav_pvt)) {
         if(nav_pvt.flags.gnssFixOK) {
