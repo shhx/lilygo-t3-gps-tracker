@@ -54,8 +54,7 @@ void setupFS() {
 
 void setupWiFi() {
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(WIFI_PS_NONE);
-    WiFi.setTxPower(WIFI_POWER_5dBm);
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
     // WiFi.softAP(ap_ssid, ap_password);  // Start the access point
     WiFi.begin(SSID, PASS);
     Serial.print("Connecting to WiFi");
