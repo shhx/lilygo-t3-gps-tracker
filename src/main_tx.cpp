@@ -106,13 +106,9 @@ uint8_t calculate_battery_percentage(float voltage) {
 
 void setup() {
     Serial.begin(115200);
-    delay(100);
     Serial.println("Starting...");
 
-    // Initialize I2C and OLED
     Wire.begin(OLED_SDA, OLED_SCL);
-    Wire.setClock(100000);
-    delay(100);
 
     if(display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
         Serial.println("OLED initialized");
@@ -133,6 +129,7 @@ void setup() {
 
     ublox_init();
     last_tx_time = millis();
+    battery_voltage = read_battery_voltage();
 }
 
 void handle_wifi() {
@@ -178,13 +175,18 @@ void update_oled_display() {
     display.setCursor(0, 40);
     display.print("GPS: ");
     if (nav_pvt.flags.gnssFixOK) {
-        display.println("Fix OK");
+        display.print("Fix OK Sats:");
+        display.println(nav_pvt.numSV);
+        display.setCursor(0, 50);
+        display.print("Lat: ");
+        display.println(nav_pvt.lat * 1e-7, 6);
+        display.setCursor(0, 58);
+        display.print("Lon: ");
+        display.println(nav_pvt.lon * 1e-7, 6);
     } else {
-        display.println("No Fix");
+        display.print("No Fix Sats:");
+        display.println(nav_pvt.numSV);
     }
-    display.setCursor(0, 50);
-    display.print("Sats: ");
-    display.println(nav_pvt.numSV);
 
     display.display();
 }
@@ -200,12 +202,12 @@ void loop() {
     }
     if (millis() - last_tx_time > 1000) {
         static int led_state = LOW;
-        battery_voltage = read_battery_voltage();
         digitalWrite(LED_PIN, led_state);
         led_state = !led_state;
         last_tx_time = millis();
-        update_oled_display();
+        battery_voltage = read_battery_voltage();
     }
+    update_oled_display();
     PacketGPS_t packet_gps = {
         .lon = nav_pvt.lon,
         .lat = nav_pvt.lat,
