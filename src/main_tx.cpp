@@ -28,7 +28,10 @@ static uint32_t tx_pkt_counter = 0;
 static uint32_t ack_pkt_counter = 0;
 
 static double last_distance_m = 0;
+static double last_bearing_deg = 0;
 static float battery_voltage = 0.0f;
+static float filtered_battery_voltage = 0.0f;
+const float BATTERY_FILTER_ALPHA = 0.01f; // Low-pass filter coefficient (0.1 to 0.5 recommended)
 
 wl_status_t last_wifi_status = WL_DISCONNECTED;
 
@@ -68,30 +71,56 @@ void setupWiFi() {
     }
 }
 
-double haversine(float lat1, float lon1, float lat2, float lon2) {
-    // all in degrees, returns meters
-    constexpr double R_EARTH = 6371000.0;
+// Haversine formula for accurate great-circle distance
+// Input: coordinates in degrees, Output: distance in meters
+double haversine_distance(double lat1, double lon1, double lat2, double lon2) {
+    constexpr double R_EARTH = 6371000.0; // Earth's mean radius in meters
     double phi1 = radians(lat1), phi2 = radians(lat2);
-    double dphi = radians(lat2-lat1);
-    double dlambda = radians(lon2-lon1);
-    double a = sin(dphi/2.0)*sin(dphi/2.0) +
-               cos(phi1)*cos(phi2)*sin(dlambda/2.0)*sin(dlambda/2.0);
-    double c = 2*atan2(sqrt(a), sqrt(1-a));
+    double dphi = radians(lat2 - lat1);
+    double dlambda = radians(lon2 - lon1);
+    double a = sin(dphi / 2.0) * sin(dphi / 2.0) +
+               cos(phi1) * cos(phi2) * sin(dlambda / 2.0) * sin(dlambda / 2.0);
+    double c = 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
     return R_EARTH * c;
+}
+
+// Forward azimuth (initial bearing) using spherical trigonometry
+// Output: bearing in degrees (0-360, where 0=North, 90=East, 180=South, 270=West)
+double calculate_bearing(double lat1, double lon1, double lat2, double lon2) {
+    double phi1 = radians(lat1);
+    double phi2 = radians(lat2);
+    double dlambda = radians(lon2 - lon1);
+
+    double x = sin(dlambda) * cos(phi2);
+    double y = cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(dlambda);
+
+    double theta = atan2(x, y);
+    double bearing = fmod(degrees(theta) + 360.0, 360.0); // Normalize to 0-360
+    return bearing;
 }
 
 float read_battery_voltage() {
     // Battery voltage divider: LilyGo T3 has a 1/2 divider
     int adc_value = analogRead(BATTERY_ADC_PIN);
-    // Convert ADC reading to voltage (accounting for divider)
-    float voltage = (adc_value / 4095.0) * 3.3 * 2;
+    const float REF_VOLTAGE = 3.26f;  // Measured reference voltage
+    const float DIVIDER_RATIO = 2.0f; // Voltage divider ratio
+    const float CALIBRATION_FACTOR = 1.07f; // Calibration factor (adjust based on your measurements)
+    float voltage = (adc_value / 4095.0) * REF_VOLTAGE * DIVIDER_RATIO * CALIBRATION_FACTOR;
     return voltage;
+}
+
+float get_filtered_battery_voltage(float raw_voltage) {
+    // Low-pass filter for smoothing battery voltage readings
+    // Reduces noise from ADC readings
+    filtered_battery_voltage = (BATTERY_FILTER_ALPHA * raw_voltage) +
+                               ((1.0f - BATTERY_FILTER_ALPHA) * filtered_battery_voltage);
+    return filtered_battery_voltage;
 }
 
 uint8_t calculate_battery_percentage(float voltage) {
     // LiPo battery voltage: 3.0V (empty) to 4.2V (full)
     // Linear approximation
-    const float MIN_VOLTAGE = 3.0f;
+    const float MIN_VOLTAGE = 3.4f;
     const float MAX_VOLTAGE = 4.2f;
 
     if (voltage <= MIN_VOLTAGE) {
@@ -129,6 +158,7 @@ void setup() {
     ublox_init();
     last_tx_time = millis();
     battery_voltage = read_battery_voltage();
+    filtered_battery_voltage = battery_voltage; // Initialize filter with first reading
 }
 
 void handle_wifi() {
@@ -148,42 +178,42 @@ void update_oled_display() {
     display.setTextColor(SSD1306_WHITE);
 
     // Battery Status
-    display.setCursor(0, 0);
-    display.print("Batt: ");
-    display.print(battery_voltage, 2);
-    display.print("V (");
-    display.print(calculate_battery_percentage(battery_voltage));
-    display.println("%)");
+    display.setCursor(55, 0);
+    display.print("Bat:");
+    display.print(filtered_battery_voltage, 2);
+    display.print("V ");
+    display.print(calculate_battery_percentage(filtered_battery_voltage));
+    display.println("%");
 
     // WiFi Status
-    display.setCursor(0, 10);
+    display.setCursor(0, 0);
     display.print("WiFi: ");
     if (WiFi.status() == WL_CONNECTED) {
-        display.println("Connected");
-        display.setCursor(0, 20);
+        display.println("Yes");
+        display.setCursor(0, 10);
         display.println(WiFi.localIP());
     } else {
-        display.println("Disconnected");
-        display.setCursor(0, 20);
+        display.println("No");
+        display.setCursor(0, 10);
         display.print(SSID);
         display.print(" : ");
         display.println(PASS);
     }
 
     // GPS Status
-    display.setCursor(0, 40);
+    display.setCursor(0, 35);
     display.print("GPS: ");
     if (nav_pvt.flags.gnssFixOK) {
-        display.print("Fix OK Sats:");
+        display.print("OK Sats:");
         display.println(nav_pvt.numSV);
-        display.setCursor(0, 50);
+        display.setCursor(0, 45);
         display.print("Lat: ");
-        display.println(nav_pvt.lat * 1e-7, 6);
-        display.setCursor(0, 58);
+        display.println(nav_pvt.lat * 1e-7, 7);
+        display.setCursor(0, 55);
         display.print("Lon: ");
-        display.println(nav_pvt.lon * 1e-7, 6);
+        display.println(nav_pvt.lon * 1e-7, 7);
     } else {
-        display.print("No Fix Sats:");
+        display.print("No Sats:");
         display.println(nav_pvt.numSV);
     }
 
@@ -204,8 +234,9 @@ void loop() {
         digitalWrite(LED_PIN, led_state);
         led_state = !led_state;
         last_tx_time = millis();
-        battery_voltage = read_battery_voltage();
     }
+    battery_voltage = read_battery_voltage();
+    get_filtered_battery_voltage(battery_voltage);
     update_oled_display();
     PacketGPS_t packet_gps = {
         .lon = nav_pvt.lon,
@@ -218,12 +249,13 @@ void loop() {
     //     Serial.println("Button pressed, starting OTA updater");
     //     start_ota_updater();
     // }
-    return;
     ublox_get_new_data();
     if (ublox_parse_msg(&nav_pvt)) {
         if(nav_pvt.flags.gnssFixOK) {
-            last_distance_m = haversine(RECEIVER_LAT, RECEIVER_LON,
-                                        nav_pvt.lat * 1e-7, nav_pvt.lon * 1e-7);
+            double gps_lat = nav_pvt.lat * 1e-7;
+            double gps_lon = nav_pvt.lon * 1e-7;
+            last_distance_m = haversine_distance(RECEIVER_LAT, RECEIVER_LON, gps_lat, gps_lon);
+            last_bearing_deg = calculate_bearing(RECEIVER_LAT, RECEIVER_LON, gps_lat, gps_lon);
         }
     }
 }
