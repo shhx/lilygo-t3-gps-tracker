@@ -136,5 +136,6 @@ void ublox_receive();
 int ublox_parse();
 int ublox_send_message(uint8_t cls, uint8_t id, uint8_t* payload, uint16_t payload_length);
 int ublox_set_cfg_pm_operatemode(ConfigPMMode mode);
+int ublox_wait_for_ack(uint8_t cls, uint8_t id, uint32_t timeout_ms);
 
 #endif // UBLOX_PROTOCOL_H

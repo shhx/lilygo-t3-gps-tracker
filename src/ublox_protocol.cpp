@@ -7,7 +7,9 @@ CircularBuffer<uint8_t> ubx_buffer(UBX_BUFFER_SIZE);
 void ublox_init() {
     UBX_SERIAL.begin(UBX_SERIAL_SPEED, SERIAL_8N1);
     UBX_SERIAL.setPins(UBLOX_RX_PIN, UBLOX_TX_PIN);
-    ublox_set_cfg_pm_operatemode(PM_MODE_FULL);
+    if (ublox_set_cfg_pm_operatemode(PM_MODE_FULL) != 0) {
+        Serial.println("Failed to set power mode to FULL");
+    }
 }
 
 bool ublox_parse_msg(ubx_nav_pvt_t *nav_pvt){
@@ -48,7 +50,7 @@ int ublox_get_next_msg(uint8_t *buffer, int buf_len) {
     }
     for (uint16_t i = 2; i < sizeof(ubx_header_t); i++) {
         ubx_buffer.peek((uint8_t*)&header+i, i);
-    } 
+    }
     if (header.length + sizeof(ubx_header_t) > UBX_BUFFER_SIZE){
         ubx_buffer.pop();
         return -1;
@@ -161,9 +163,60 @@ int ublox_send_cfg_valset(uint32_t key, uint8_t* value, uint8_t size) {
     return 0;
 }
 
+int ublox_wait_for_ack(uint8_t cls, uint8_t id, uint32_t timeout_ms) {
+    uint32_t start_time = millis();
+    while (millis() - start_time < timeout_ms) {
+        ublox_get_new_data();
+
+        if (ubx_buffer.get_count() < sizeof(ubx_header_t) + 2 + UBX_CHECKSUM_SIZE) {
+            continue;
+        }
+
+        ubx_header_t header;
+        ubx_buffer.peek(&header.sync1, 0);
+        ubx_buffer.peek(&header.sync2, 1);
+
+        if (header.sync1 != UBX_SYNC1 || header.sync2 != UBX_SYNC2) {
+            ubx_buffer.pop();
+            continue;
+        }
+
+        for (uint16_t i = 2; i < sizeof(ubx_header_t); i++) {
+            ubx_buffer.peek((uint8_t*)&header + i, i);
+        }
+
+        if (header.cls == UBX_CLASS_ACK && header.length == 2) {
+            uint8_t ack_cls, ack_id;
+            ubx_buffer.peek(&ack_cls, sizeof(ubx_header_t));
+            ubx_buffer.peek(&ack_id, sizeof(ubx_header_t) + 1);
+
+            if (ack_cls == cls && ack_id == id) {
+                // Pop the entire ACK message (header + 2 payload + 2 checksum)
+                for (uint16_t i = 0; i < sizeof(ubx_header_t) + 2 + UBX_CHECKSUM_SIZE; i++) {
+                    ubx_buffer.pop();
+                }
+
+                if (header.id == UBX_ID_ACK_ACK) {
+                    Serial.printf("ACK received for class 0x%02X id 0x%02X\n", cls, id);
+                    return 1;  // ACK received
+                } else if (header.id == UBX_ID_ACK_NAK) {
+                    Serial.printf("NAK received for class 0x%02X id 0x%02X\n", cls, id);
+                    return 0;  // NAK received
+                }
+            }
+        }
+
+        // Not an ACK for our message, pop and continue
+        ubx_buffer.pop();
+    }
+
+    Serial.printf("Timeout waiting for ACK (class 0x%02X id 0x%02X)\n", cls, id);
+    return -1;  // Timeout
+}
+
 int ublox_set_cfg_pm_operatemode(ConfigPMMode mode) {
     ublox_send_cfg_valset(CFG_PM_OPERATEMODE, (uint8_t*)&mode, 1); // Key for PM_OPERATEMODE
-    return 0;
+    // return 0;
     // Wait for ACK or NAK
-    // return ublox_wait_for_ack(UBX_CLASS_CFG, UBX_ID_CFG_VALSET, 1000); // 1 second timeout
+    return ublox_wait_for_ack(UBX_CLASS_CFG, UBX_ID_CFG_VALSET, 1000); // 1 second timeout
 }
