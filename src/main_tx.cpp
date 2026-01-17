@@ -20,8 +20,8 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
 
 #define DNS_NAME "gps-tracker"
 
-const float RECEIVER_LAT = 40.7749f;
-const float RECEIVER_LON = -3.4194f;
+const float RECEIVER_LAT = 40.439f;
+const float RECEIVER_LON = -3.6194f;
 static uint32_t last_tx_time = 0;
 static bool ota_enabled = false;
 static uint32_t tx_pkt_counter = 0;
@@ -118,10 +118,9 @@ float get_filtered_battery_voltage(float raw_voltage) {
 }
 
 uint8_t calculate_battery_percentage(float voltage) {
-    // LiPo battery voltage: 3.0V (empty) to 4.2V (full)
     // Linear approximation
     const float MIN_VOLTAGE = 3.4f;
-    const float MAX_VOLTAGE = 4.2f;
+    const float MAX_VOLTAGE = 4.1f;
 
     if (voltage <= MIN_VOLTAGE) {
         return 0;
@@ -201,17 +200,25 @@ void update_oled_display() {
     }
 
     // GPS Status
-    display.setCursor(0, 35);
+    display.setCursor(0, 25);
     display.print("GPS: ");
     if (nav_pvt.flags.gnssFixOK) {
         display.print("OK Sats:");
         display.println(nav_pvt.numSV);
-        display.setCursor(0, 45);
+        display.setCursor(0, 35);
         display.print("Lat: ");
         display.println(nav_pvt.lat * 1e-7, 7);
-        display.setCursor(0, 55);
+        display.setCursor(0, 45);
         display.print("Lon: ");
         display.println(nav_pvt.lon * 1e-7, 7);
+        // Distance and Bearing
+        display.setCursor(0, 55);
+        display.print("D:");
+        display.print(last_distance_m, 0);
+        display.print("m ");
+        display.print("Brg:");
+        display.print(last_bearing_deg, 1);
+        display.println((char)247); // degree symbol
     } else {
         display.print("No Sats:");
         display.println(nav_pvt.numSV);
