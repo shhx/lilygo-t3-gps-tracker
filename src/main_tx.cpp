@@ -14,6 +14,8 @@
 #include "pins.h"
 #include "ublox_protocol.h"
 #include "udp_sender.h"
+#include "config.h"
+#include <ArduinoJson.h>
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -21,16 +23,13 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
 
 #define DNS_NAME "gps-tracker"
 
-const float RECEIVER_LAT = 40.439f;
-const float RECEIVER_LON = -3.6194f;
 static uint32_t last_tx_time = 0;
 static bool ota_enabled = false;
 static uint32_t tx_pkt_counter = 0;
 static uint32_t ack_pkt_counter = 0;
 
-// UDP Server Configuration
-const char* UDP_SERVER_IP = "192.168.1.100";  // Change this to your server IP
-const uint16_t UDP_SERVER_PORT = 5000;         // Change this to your server port
+// Configuration Manager and UDP Sender
+ConfigManager configManager;
 UDPSender udpSender;
 
 static double last_distance_m = 0;
@@ -137,6 +136,67 @@ uint8_t calculate_battery_percentage(float voltage) {
     }
 }
 
+void setupWebServer() {
+    // Serve the configuration page
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send(LittleFS, "/index.html", "text/html");
+    });
+
+    // API endpoint to get current configuration
+    server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest *request){
+        JsonDocument doc;
+        const Config& cfg = configManager.getConfig();
+
+        doc["server_ip"] = cfg.server_ip;
+        doc["server_port"] = cfg.server_port;
+        doc["receiver_lat"] = cfg.receiver_lat;
+        doc["receiver_lon"] = cfg.receiver_lon;
+
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
+    });
+
+    // API endpoint to save configuration
+    server.on("/api/config", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+            JsonDocument doc;
+            DeserializationError error = deserializeJson(doc, (const char*)data);
+
+            if (error) {
+                request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}");
+                return;
+            }
+
+            // Update configuration
+            if (doc.containsKey("server_ip")) {
+                configManager.setServerIP(doc["server_ip"].as<const char*>());
+            }
+            if (doc.containsKey("server_port")) {
+                configManager.setServerPort(doc["server_port"].as<uint16_t>());
+            }
+            if (doc.containsKey("receiver_lat")) {
+                configManager.setReceiverLat(doc["receiver_lat"].as<float>());
+            }
+            if (doc.containsKey("receiver_lon")) {
+                configManager.setReceiverLon(doc["receiver_lon"].as<float>());
+            }
+
+            // Save to flash
+            if (configManager.save()) {
+                // Update UDP sender with new configuration
+                udpSender.begin(configManager.getServerIP(), configManager.getServerPort());
+                request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved\"}");
+            } else {
+                request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to save\"}");
+            }
+        }
+    );
+
+    server.begin();
+    Serial.println("Web server started");
+}
+
 void setup() {
     Serial.begin(115200);
     Serial.println("Starting...");
@@ -155,7 +215,15 @@ void setup() {
         Serial.println("OLED init failed");
     }
 
+    // Initialize configuration manager
+    if (!configManager.begin()) {
+        Serial.println("Failed to initialize config manager");
+    }
+
+    setupFS();
     setupWiFi();
+    setupWebServer();
+
     pinMode(LED_PIN, OUTPUT);
     pinMode(BATTERY_ADC_PIN, INPUT);
     analogReadResolution(12);
@@ -165,7 +233,8 @@ void setup() {
     battery_voltage = read_battery_voltage();
     filtered_battery_voltage = battery_voltage; // Initialize filter with first reading
 
-    udpSender.begin(UDP_SERVER_IP, UDP_SERVER_PORT);
+    // Initialize UDP sender with configuration from flash
+    udpSender.begin(configManager.getServerIP(), configManager.getServerPort());
 }
 
 void handle_wifi() {
@@ -263,8 +332,8 @@ void loop() {
         if(nav_pvt.flags.gnssFixOK) {
             double gps_lat = nav_pvt.lat * 1e-7;
             double gps_lon = nav_pvt.lon * 1e-7;
-            last_distance_m = haversine_distance(RECEIVER_LAT, RECEIVER_LON, gps_lat, gps_lon);
-            last_bearing_deg = calculate_bearing(RECEIVER_LAT, RECEIVER_LON, gps_lat, gps_lon);
+            last_distance_m = haversine_distance(configManager.getReceiverLat(), configManager.getReceiverLon(), gps_lat, gps_lon);
+            last_bearing_deg = calculate_bearing(configManager.getReceiverLat(), configManager.getReceiverLon(), gps_lat, gps_lon);
 
             // Send GPS data via UDP when WiFi is available
             if (udpSender.isReady()) {
