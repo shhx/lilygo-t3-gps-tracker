@@ -169,16 +169,16 @@ void setupWebServer() {
             }
 
             // Update configuration
-            if (doc.containsKey("server_ip")) {
+            if (doc["server_ip"].is<const char*>()) {
                 configManager.setServerIP(doc["server_ip"].as<const char*>());
             }
-            if (doc.containsKey("server_port")) {
+            if (doc["server_port"].is<uint16_t>()) {
                 configManager.setServerPort(doc["server_port"].as<uint16_t>());
             }
-            if (doc.containsKey("receiver_lat")) {
+            if (doc["receiver_lat"].is<float>()) {
                 configManager.setReceiverLat(doc["receiver_lat"].as<float>());
             }
-            if (doc.containsKey("receiver_lon")) {
+            if (doc["receiver_lon"].is<float>()) {
                 configManager.setReceiverLon(doc["receiver_lon"].as<float>());
             }
 
@@ -254,7 +254,7 @@ void update_oled_display() {
     display.setTextColor(SSD1306_WHITE);
 
     // Battery Status
-    display.setCursor(55, 0);
+    display.setCursor(50, 0);
     display.print("Bat:");
     display.print(filtered_battery_voltage, 2);
     display.print("V ");
@@ -263,9 +263,9 @@ void update_oled_display() {
 
     // WiFi Status
     display.setCursor(0, 0);
-    display.print("WiFi: ");
+    display.print("WiFi:");
     if (WiFi.status() == WL_CONNECTED) {
-        display.println("Yes");
+        display.println("OK");
         display.setCursor(0, 10);
         display.println(WiFi.localIP());
     } else {
