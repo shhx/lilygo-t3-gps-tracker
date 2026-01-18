@@ -44,9 +44,9 @@ wl_status_t last_wifi_status = WL_DISCONNECTED;
 ubx_nav_pvt_t nav_pvt;
 
 AsyncWebServer server(80);
-const char* SSID = "red";
+const char* SSID = "net";
 const char* PASS = "12345678";
-const char* ap_ssid = "Radio-TX";
+const char* ap_ssid = DNS_NAME;
 const char* ap_password = "12345678";
 
 void start_ota_updater(void) {
