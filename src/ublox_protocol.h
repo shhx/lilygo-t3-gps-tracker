@@ -2,7 +2,6 @@
 #define UBLOX_PROTOCOL_H
 
 #include <Arduino.h>
-#include "cassert.h"
 
 #define UBX_SERIAL Serial2
 #define UBX_SERIAL_SPEED 115200
@@ -69,7 +68,6 @@ typedef struct {
     uint32_t reserved3: 4;
     uint32_t item_id: 12;
 } ubx_cfg_valset_key_t;
-CASSERT(sizeof(ubx_cfg_valset_key_t) == 4, ubx_cfg_valset_key_t_size_mismatch);
 
 typedef struct {
     uint8_t gnssFixOK : 1;

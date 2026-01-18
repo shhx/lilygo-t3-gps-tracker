@@ -6,9 +6,6 @@ CircularBuffer<uint8_t> ubx_buffer(UBX_BUFFER_SIZE);
 
 void ublox_init() {
     UBX_SERIAL.begin(UBX_SERIAL_SPEED, SERIAL_8N1, UBLOX_RX_PIN, UBLOX_TX_PIN);
-    if (ublox_set_cfg_pm_operatemode(PM_MODE_FULL) != 1) {
-        Serial.println("Failed to set power mode to FULL");
-    }
 }
 
 bool ublox_parse_msg(ubx_nav_pvt_t *nav_pvt){

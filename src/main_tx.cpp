@@ -13,6 +13,7 @@
 #include "packet.h"
 #include "pins.h"
 #include "ublox_protocol.h"
+#include "udp_sender.h"
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -26,6 +27,11 @@ static uint32_t last_tx_time = 0;
 static bool ota_enabled = false;
 static uint32_t tx_pkt_counter = 0;
 static uint32_t ack_pkt_counter = 0;
+
+// UDP Server Configuration
+const char* UDP_SERVER_IP = "192.168.1.100";  // Change this to your server IP
+const uint16_t UDP_SERVER_PORT = 5000;         // Change this to your server port
+UDPSender udpSender;
 
 static double last_distance_m = 0;
 static double last_bearing_deg = 0;
@@ -120,7 +126,7 @@ float get_filtered_battery_voltage(float raw_voltage) {
 uint8_t calculate_battery_percentage(float voltage) {
     // Linear approximation
     const float MIN_VOLTAGE = 3.4f;
-    const float MAX_VOLTAGE = 4.1f;
+    const float MAX_VOLTAGE = 4.14f;
 
     if (voltage <= MIN_VOLTAGE) {
         return 0;
@@ -158,6 +164,8 @@ void setup() {
     last_tx_time = millis();
     battery_voltage = read_battery_voltage();
     filtered_battery_voltage = battery_voltage; // Initialize filter with first reading
+
+    udpSender.begin(UDP_SERVER_IP, UDP_SERVER_PORT);
 }
 
 void handle_wifi() {
@@ -245,13 +253,7 @@ void loop() {
     battery_voltage = read_battery_voltage();
     get_filtered_battery_voltage(battery_voltage);
     update_oled_display();
-    PacketGPS_t packet_gps = {
-        .lon = nav_pvt.lon,
-        .lat = nav_pvt.lat,
-        .fix_ok = nav_pvt.flags.gnssFixOK,
-        .fix_type = nav_pvt.fixType,
-        .sv_num = (uint8_t)(nav_pvt.numSV > 15 ? 15 : nav_pvt.numSV), // limit to 15 for 4 bits
-    };
+
     // if (digitalRead(BUTTON_PIN) == LOW) {
     //     Serial.println("Button pressed, starting OTA updater");
     //     start_ota_updater();
@@ -263,6 +265,25 @@ void loop() {
             double gps_lon = nav_pvt.lon * 1e-7;
             last_distance_m = haversine_distance(RECEIVER_LAT, RECEIVER_LON, gps_lat, gps_lon);
             last_bearing_deg = calculate_bearing(RECEIVER_LAT, RECEIVER_LON, gps_lat, gps_lon);
+
+            // Send GPS data via UDP when WiFi is available
+            if (udpSender.isReady()) {
+                Packet_t packet = {
+                    .seq_num = (uint8_t)tx_pkt_counter++,
+                    .lon = nav_pvt.lon,
+                    .lat = nav_pvt.lat,
+                    .fix_ok = nav_pvt.flags.gnssFixOK,
+                    .fix_type = nav_pvt.fixType,
+                    .sv_num = (uint8_t)(nav_pvt.numSV > 15 ? 15 : nav_pvt.numSV), // limit to 15 for 4 bits
+                    .battery_level = calculate_battery_percentage(filtered_battery_voltage)
+                };
+
+                if (udpSender.sendPacket(packet)) {
+                    Serial.println("GPS data sent via UDP");
+                } else {
+                    Serial.println("Failed to send GPS data via UDP");
+                }
+            }
         }
     }
 }
