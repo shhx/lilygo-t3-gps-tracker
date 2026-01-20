@@ -13,7 +13,7 @@
 #include "packet.h"
 #include "pins.h"
 #include "ublox_protocol.h"
-#include "udp_sender.h"
+#include "mqtt_sender.h"
 #include "config.h"
 #include <ArduinoJson.h>
 
@@ -28,9 +28,9 @@ static bool ota_enabled = false;
 static uint32_t tx_pkt_counter = 0;
 static uint32_t ack_pkt_counter = 0;
 
-// Configuration Manager and UDP Sender
+// Configuration Manager and MQTT Sender
 ConfigManager configManager;
-UDPSender udpSender;
+MQTTSender mqttSender;
 
 static double last_distance_m = 0;
 static double last_bearing_deg = 0;
@@ -151,6 +151,8 @@ void setupWebServer() {
         doc["server_port"] = cfg.server_port;
         doc["receiver_lat"] = cfg.receiver_lat;
         doc["receiver_lon"] = cfg.receiver_lon;
+        doc["mqtt_user"] = cfg.mqtt_user;
+        doc["mqtt_pass"] = cfg.mqtt_pass;
 
         String response;
         serializeJson(doc, response);
@@ -181,11 +183,18 @@ void setupWebServer() {
             if (doc["receiver_lon"].is<float>()) {
                 configManager.setReceiverLon(doc["receiver_lon"].as<float>());
             }
+            if (doc["mqtt_user"].is<const char*>()) {
+                configManager.setMqttUser(doc["mqtt_user"].as<const char*>());
+            }
+            if (doc["mqtt_pass"].is<const char*>()) {
+                configManager.setMqttPass(doc["mqtt_pass"].as<const char*>());
+            }
 
             // Save to flash
             if (configManager.save()) {
-                // Update UDP sender with new configuration
-                udpSender.begin(configManager.getServerIP(), configManager.getServerPort());
+                // Update MQTT sender with new configuration
+                mqttSender.begin(configManager.getServerIP(), configManager.getServerPort());
+                mqttSender.setAuth(configManager.getMqttUser(), configManager.getMqttPass());
                 request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved\"}");
             } else {
                 request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to save\"}");
@@ -233,8 +242,9 @@ void setup() {
     battery_voltage = read_battery_voltage();
     filtered_battery_voltage = battery_voltage; // Initialize filter with first reading
 
-    // Initialize UDP sender with configuration from flash
-    udpSender.begin(configManager.getServerIP(), configManager.getServerPort());
+    // Initialize MQTT sender with configuration from flash
+    mqttSender.begin(configManager.getServerIP(), configManager.getServerPort());
+    mqttSender.setAuth(configManager.getMqttUser(), configManager.getMqttPass());
 }
 
 void handle_wifi() {
@@ -257,7 +267,7 @@ void update_oled_display() {
     display.setCursor(50, 0);
     display.print("Bat:");
     display.print(filtered_battery_voltage, 2);
-    display.print("V ");
+    display.print(" ");
     display.print(calculate_battery_percentage(filtered_battery_voltage));
     display.println("%");
 
@@ -306,6 +316,7 @@ void update_oled_display() {
 
 void loop() {
     handle_wifi();
+    mqttSender.loop();  // Maintain MQTT connection
     if (ota_enabled) {
         // Stop web server to avoid conflicts during OTA
         server.end();
@@ -335,8 +346,8 @@ void loop() {
             last_distance_m = haversine_distance(configManager.getReceiverLat(), configManager.getReceiverLon(), gps_lat, gps_lon);
             last_bearing_deg = calculate_bearing(configManager.getReceiverLat(), configManager.getReceiverLon(), gps_lat, gps_lon);
 
-            // Send GPS data via UDP when WiFi is available
-            if (udpSender.isReady()) {
+            // Send GPS data via MQTT when WiFi is available
+            if (mqttSender.isReady()) {
                 Packet_t packet = {
                     .seq_num = (uint8_t)tx_pkt_counter++,
                     .lon = nav_pvt.lon,
@@ -347,10 +358,8 @@ void loop() {
                     .battery_level = calculate_battery_percentage(filtered_battery_voltage)
                 };
 
-                if (udpSender.sendPacket(packet)) {
-                    Serial.println("GPS data sent via UDP");
-                } else {
-                    Serial.println("Failed to send GPS data via UDP");
+                if (!mqttSender.sendPacket(packet)) {
+                    Serial.println("Failed to send GPS data via MQTT");
                 }
             }
         }

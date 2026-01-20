@@ -182,7 +182,7 @@
         <h1>🛰️ GPS Tracker Config</h1>
         <form id="configForm">
             <div class="section">
-                <div class="section-title">UDP Server Settings</div>
+                <div class="section-title">MQTT Server Settings</div>
 
                 <div class="form-group">
                     <label for="serverIp">Server IP Address</label>
@@ -194,7 +194,20 @@
                 <div class="form-group">
                     <label for="serverPort">Server Port</label>
                     <input type="number" id="serverPort" name="serverPort" required
-                           min="1" max="65535" placeholder="5000">
+                           min="1" max="65535" placeholder="1883">
+                    <div class="input-hint">Default MQTT port: 1883</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="mqttUser">MQTT Username (optional)</label>
+                    <input type="text" id="mqttUser" name="mqttUser" placeholder="username">
+                    <div class="input-hint">Leave empty for anonymous connection</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="mqttPass">MQTT Password (optional)</label>
+                    <input type="password" id="mqttPass" name="mqttPass" placeholder="password">
+                    <div class="input-hint">Required if username is set</div>
                 </div>
             </div>
 
@@ -246,6 +259,8 @@
                 document.getElementById('serverPort').value = config.server_port;
                 document.getElementById('receiverLat').value = config.receiver_lat;
                 document.getElementById('receiverLon').value = config.receiver_lon;
+                document.getElementById('mqttUser').value = config.mqtt_user || '';
+                document.getElementById('mqttPass').value = config.mqtt_pass || '';
 
                 showStatus('Configuration loaded successfully!', 'success');
                 setTimeout(hideStatus, 3000);
@@ -264,7 +279,9 @@
                 server_ip: document.getElementById('serverIp').value,
                 server_port: parseInt(document.getElementById('serverPort').value),
                 receiver_lat: parseFloat(document.getElementById('receiverLat').value),
-                receiver_lon: parseFloat(document.getElementById('receiverLon').value)
+                receiver_lon: parseFloat(document.getElementById('receiverLon').value),
+                mqtt_user: document.getElementById('mqttUser').value,
+                mqtt_pass: document.getElementById('mqttPass').value
             };
 
             showStatus('Saving configuration...', 'info');
