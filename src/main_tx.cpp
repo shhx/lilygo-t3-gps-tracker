@@ -258,6 +258,20 @@ void handle_wifi() {
     last_wifi_status = wifi_status;
 }
 
+// Draw MQTT connection status icon
+// Position: top-right corner (x, y)
+void draw_mqtt_icon(int x, int y) {
+    bool mqtt_connected = mqttSender.isReady();
+
+    if (mqtt_connected) {
+        display.fillCircle(x+3, y+3, 3, SSD1306_WHITE);
+    } else {
+        // Draw an X to indicate disconnected
+        display.drawLine(x, y, x+6, y+6, SSD1306_WHITE);
+        display.drawLine(x+6, y, x, y+6, SSD1306_WHITE);
+    }
+}
+
 void update_oled_display() {
     display.clearDisplay();
     display.setTextSize(1);
@@ -270,6 +284,9 @@ void update_oled_display() {
     display.print(" ");
     display.print(calculate_battery_percentage(filtered_battery_voltage));
     display.println("%");
+
+    // MQTT Status Icon (top-right)
+    draw_mqtt_icon(118, 10);
 
     // WiFi Status
     display.setCursor(0, 0);
@@ -346,21 +363,20 @@ void loop() {
             last_distance_m = haversine_distance(configManager.getReceiverLat(), configManager.getReceiverLon(), gps_lat, gps_lon);
             last_bearing_deg = calculate_bearing(configManager.getReceiverLat(), configManager.getReceiverLon(), gps_lat, gps_lon);
 
-            // Send GPS data via MQTT when WiFi is available
-            if (mqttSender.isReady()) {
-                Packet_t packet = {
-                    .seq_num = (uint8_t)tx_pkt_counter++,
-                    .lon = nav_pvt.lon,
-                    .lat = nav_pvt.lat,
-                    .fix_ok = nav_pvt.flags.gnssFixOK,
-                    .fix_type = nav_pvt.fixType,
-                    .sv_num = (uint8_t)(nav_pvt.numSV > 15 ? 15 : nav_pvt.numSV), // limit to 15 for 4 bits
-                    .battery_level = calculate_battery_percentage(filtered_battery_voltage)
-                };
-
-                if (!mqttSender.sendPacket(packet)) {
-                    Serial.println("Failed to send GPS data via MQTT");
-                }
+        }
+        // Send GPS data via MQTT when WiFi is available
+        if (mqttSender.isReady()) {
+            Packet_t packet = {
+                .seq_num = (uint8_t)tx_pkt_counter++,
+                .lon = nav_pvt.lon,
+                .lat = nav_pvt.lat,
+                .fix_ok = nav_pvt.flags.gnssFixOK,
+                .fix_type = nav_pvt.fixType,
+                .sv_num = (uint8_t)(nav_pvt.numSV > 15 ? 15 : nav_pvt.numSV), // limit to 15 for 4 bits
+                .battery_level = calculate_battery_percentage(filtered_battery_voltage)
+            };
+            if (!mqttSender.sendPacket(packet)) {
+                Serial.println("Failed to send GPS data via MQTT");
             }
         }
     }
